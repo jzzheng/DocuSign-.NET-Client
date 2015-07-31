@@ -93,6 +93,8 @@ namespace DocuSign.Integrations.Client
 
         public string templateId { get; set; }
 
+        public string brandId { get; set; }
+
         public Recipients recipients { get; set; }
 
         public CompositeTemplate[] compositeTemplates { get; set; }

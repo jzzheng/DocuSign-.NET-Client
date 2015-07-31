@@ -154,6 +154,11 @@ namespace DocuSign.Integrations.Client
         public string TemplateId { get; set; }
 
         /// <summary>
+        /// BrandId used for this envelope
+        /// </summary>
+        public string BrandId { get; set; }
+
+        /// <summary>
         /// Gets the signed pdf when its completed from service
         /// </summary>
         /// <param name="envelopeId">The envelopeId for this envelope</param>
@@ -975,6 +980,7 @@ namespace DocuSign.Integrations.Client
                 env.carbonCopies = this.CarbonCopies;
                 env.status = this.Status;
                 env.templateId = this.TemplateId;
+                env.brandId = this.BrandId;
                 env.compositeTemplates = this.CompositeTemplates;
 
                 // documents information...
