@@ -158,6 +158,8 @@ namespace DocuSign.Integrations.Client
         /// </summary>
         public string BrandId { get; set; }
 
+        public string EnableWetSign { get; set; }
+
         /// <summary>
         /// Gets the signed pdf when its completed from service
         /// </summary>
@@ -981,6 +983,7 @@ namespace DocuSign.Integrations.Client
                 env.status = this.Status;
                 env.templateId = this.TemplateId;
                 env.brandId = this.BrandId;
+                env.enableWetSign = this.EnableWetSign;
                 env.compositeTemplates = this.CompositeTemplates;
 
                 // documents information...
@@ -994,6 +997,70 @@ namespace DocuSign.Integrations.Client
                     doc.name = docPath;
                     docs.Add(doc);
                     i++;
+                }
+                env.documents = docs.ToArray();
+
+                env.eventNotification = this.Events;
+                string output = JsonConvert.SerializeObject(env, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+                return output;
+            }
+            catch (Exception ex)
+            {
+                if (ex is WebException || ex is NotSupportedException || ex is InvalidOperationException || ex is ProtocolViolationException)
+                {
+                    // Once we get the debugging logger integrated into this project, we should write a log entry here
+                    return string.Empty;
+                }
+
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Serializes the Json objects
+        /// </summary>
+        /// <param name="docPaths">full paths to documents, in order</param>
+        /// <param name="docIds">documentIds, unique positive integers in same order as corresponding documents</param>
+        /// <returns>serialized Json text</returns>
+        protected string CreateJson(List<string> docPaths, List<int> docIds)
+        {
+            if (docPaths.Count != docIds.Count)
+            {
+                throw new ArgumentException("Mismatch between number of docs and doc IDs - they must be the same");
+            }
+            try
+            {
+                EnvelopeCreate env = new EnvelopeCreate();
+                env.emailBlurb = RestSettings.Instance.EmailBlurb;
+                env.emailSubject = string.IsNullOrEmpty(this.EmailSubject) ? RestSettings.Instance.EmailSubject : this.EmailSubject;
+                if (this.CustomFields != null)
+                {
+                    env.customFields = this.CustomFields;
+                }
+                if (!String.IsNullOrEmpty(EmailBlurb))
+                {
+                    env.emailBlurb = EmailBlurb.Length > MaxBlurbSize
+                        ? EmailBlurb.Substring(0, MaxBlurbSize)
+                        : EmailBlurb;
+                }
+
+                env.recipients = this.Recipients;
+                env.templateRoles = this.TemplateRoles;
+                env.carbonCopies = this.CarbonCopies;
+                env.status = this.Status;
+                env.templateId = this.TemplateId;
+                env.brandId = this.BrandId;
+                env.enableWetSign = this.EnableWetSign;
+                env.compositeTemplates = this.CompositeTemplates;
+
+                // documents information...
+                var docs = new List<Document>();
+                for (int i = 0; i < docPaths.Count; ++i)
+                {
+                    var doc = new Document();
+                    doc.documentId = docIds[i].ToString();
+                    doc.name = docPaths[i];
+                    docs.Add(doc);
                 }
                 env.documents = docs.ToArray();
 
@@ -1525,7 +1592,7 @@ namespace DocuSign.Integrations.Client
             RequestBody rb = new RequestBody();
             rb.Headers.Add("Content-Type", "application/json");
             rb.Headers.Add("Content-Disposition", "form-data");
-            rb.Text = this.CreateJson(fileNames);
+            rb.Text = this.CreateJson(fileNames, 1);
             requestBodies.Add(rb);
 
             for (int i = 0; i < fileNames.Count; i++)
@@ -1535,6 +1602,94 @@ namespace DocuSign.Integrations.Client
                 string mime = string.IsNullOrEmpty(this.MimeType) == true ? DefaultMimeType : this.MimeType;
                 reqFile.Headers.Add("Content-Type", mime);
                 reqFile.Headers.Add("Content-Disposition", string.Format("file; filename=\"{0}\"; documentId={1}", fileName, i + 1));
+
+                reqFile.FileBytes = fileBytesList[i];
+                reqFile.SubstituteStrings = false;
+                requestBodies.Add(reqFile);
+            }
+
+            req.RequestBody = requestBodies.ToArray();
+            builder.Request = req;
+
+            ResponseInfo response = builder.MakeRESTRequest();
+            this.Trace(builder, response);
+
+            if (response.StatusCode == HttpStatusCode.Created)
+            {
+                this.ParseCreateResponse(response);
+                return this.GetSenderView(string.Empty);
+            }
+            else
+            {
+                this.ParseErrorResponse(response);
+            }
+
+            return response.StatusCode == HttpStatusCode.Created;
+        }
+
+
+        /// <summary>
+        /// Creates an envelope for the user, with the specified documentIds
+        /// </summary>
+        /// <param name="fileBytes">Byte arrays of the files' content - in correct order.</param>
+        /// <param name="fileNames">File names - in correct order</param>
+        /// <param name="documentIds">Document IDs - unique positive integers in order corresponding to files</param>
+        /// <returns>true if successful, false otherwise</returns>
+        public bool Create(List<byte[]> fileBytesList, List<string> fileNames, List<int> documentIds)
+        {
+            if (this.Login == null)
+            {
+                throw new ArgumentNullException("Login");
+            }
+
+            if (string.IsNullOrEmpty(this.Login.BaseUrl) == true)
+            {
+                throw new ArgumentNullException("BaseUrl");
+            }
+
+            if (string.IsNullOrEmpty(this.Login.ApiPassword) == true)
+            {
+                throw new ArgumentNullException("ApiPassword");
+            }
+            if (fileNames.Count != fileBytesList.Count)
+            {
+                throw new ArgumentException("Mismatch between number of files names and files' bytes content - they must be the same");
+            }
+
+            RequestBuilder builder = new RequestBuilder();
+            RequestInfo req = new RequestInfo();
+            List<RequestBody> requestBodies = new List<RequestBody>();
+
+            req.RequestContentType = "multipart/form-data";
+            req.BaseUrl = this.Login.BaseUrl;
+            req.LoginEmail = this.Login.Email;
+            req.ApiPassword = this.Login.ApiPassword;
+            req.Uri = "/envelopes?api_password=true";
+            req.HttpMethod = "POST";
+            req.IntegratorKey = RestSettings.Instance.IntegratorKey;
+            req.IsMultipart = true;
+            req.MultipartBoundary = new Guid().ToString();
+            builder.Proxy = this.Proxy;
+
+            if (string.IsNullOrWhiteSpace(this.Login.SOBOUserId) == false)
+            {
+                req.SOBOUserId = this.Login.SOBOUserId;
+                builder.AuthorizationFormat = RequestBuilder.AuthFormat.Json;
+            }
+
+            RequestBody rb = new RequestBody();
+            rb.Headers.Add("Content-Type", "application/json");
+            rb.Headers.Add("Content-Disposition", "form-data");
+            rb.Text = this.CreateJson(fileNames, documentIds);
+            requestBodies.Add(rb);
+
+            for (int i = 0; i < fileNames.Count; i++)
+            {
+                var fileName = fileNames[i];
+                RequestBody reqFile = new RequestBody();
+                string mime = string.IsNullOrEmpty(this.MimeType) == true ? DefaultMimeType : this.MimeType;
+                reqFile.Headers.Add("Content-Type", mime);
+                reqFile.Headers.Add("Content-Disposition", string.Format("file; filename=\"{0}\"; documentId={1}", fileName, documentIds[i]));
 
                 reqFile.FileBytes = fileBytesList[i];
                 reqFile.SubstituteStrings = false;

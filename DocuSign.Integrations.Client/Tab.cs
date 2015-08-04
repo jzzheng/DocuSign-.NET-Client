@@ -98,6 +98,14 @@ namespace DocuSign.Integrations.Client
         /// </summary>
         public string optional { get; set; }
         /// <summary>
+        /// Optional, for conditional fields this is the TabLabel of the parent tab that controls this tab's visibility
+        /// </summary>
+        public string conditionalParentLabel { get; set; }
+        /// <summary>
+        /// Optional, for conditionals this is the Value of the parent tab that controls this tab's visibility
+        /// </summary>
+        public string conditionalParentValue { get; set; }
+        /// <summary>
         ///The font size used for the information in
         ///the tab. Possible values are: Size7,
         ///Size8, Size9, Size10, Size11, Size12,
@@ -118,7 +126,6 @@ namespace DocuSign.Integrations.Client
         public string recipientId { get; set; }
 
 
-        public string selected { get; set; }
 
 
 	}

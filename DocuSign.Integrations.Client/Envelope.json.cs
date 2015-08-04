@@ -182,6 +182,11 @@ namespace DocuSign.Integrations.Client
     public class Signer
     {
         /// <summary>
+        /// The signer's access code
+        /// </summary>
+        public string accessCode { get; set; }
+
+        /// <summary>
         /// The signer's email address
         /// </summary>
         public string email { get; set; }
